@@ -42,5 +42,89 @@ The first command runs Stage 5 tests. The second runs the complete backend test 
 
 Stage 5 proposes and compares simulated plans. Stage 6 is the independent safety veto. Stage 5 must not issue commands to real equipment or override Stage 6.
 
+---
 
+## Additional Implementation: Structured Models and Resource Manager
+
+### 1. Structured Data Models (`models.py`)
+
+The `models.py` file provides structured representations of M5 optimization data.
+
+It contains four main data models:
+
+| Model | Responsibility |
+|---|---|
+| `ActionModel` | Represents an intervention, including duration, cost, dependencies, failure probability and effect delays. |
+| `ScheduledAction` | Represents an action with its scheduled execution and effect timing. |
+| `ActionPlan` | Represents an ordered plan, its feasibility, violations and evaluation information. |
+| `ObjectiveWeights` | Represents configurable weights for risk and cost-related optimization objectives. |
+
+These models improve consistency and validation when representing candidate interventions and plans.
+
+### 2. Resource Manager (`resource_manager.py`)
+
+The resource manager validates cumulative resource consumption across an ordered action plan.
+
+Main function:
+
+```python
+validate_resource_plan(resource_inventory, action_requirements)
+```
+
+It performs the following checks:
+
+- Validates the resource inventory.
+- Checks resource availability and capacity.
+- Validates individual action resource requirements.
+- Calculates cumulative resource consumption.
+- Identifies resource violations.
+- Reports unknown or invalid requirements.
+
+Possible validation statuses:
+
+| Status | Meaning |
+|---|---|
+| `PASS` | The resource requirements are feasible. |
+| `FAIL` | One or more resource constraints are violated. |
+| `UNKNOWN` | Resource information is missing or invalid, so feasibility cannot be confirmed. |
+
+The resource manager reports `execution_authorized: false`. Resource feasibility does not imply operational safety or permission to execute a plan.
+
+### 3. Resource Validation Integration
+
+The M5 engine integrates plan-level resource validation into candidate-plan evaluation.
+
+Each candidate plan is checked against the configured resource inventory. The resource validation result is included in the plan report.
+
+A plan is considered resource-feasible only when the resource manager confirms feasibility.
+
+The existing stochastic simulation and safety checks remain separate from this additional resource-validation layer.
+
+### 4. Resource Manager Tests
+
+The additional resource manager tests are located at:
+
+```text
+backend/tests/test_m5_resource_manager.py
+```
+
+The tests cover:
+
+1. Successful resource allocation.
+2. Resource over-allocation.
+3. Unknown resource requirements.
+4. Rejection of qualitative values as numeric quantities.
+5. Empty-plan handling.
+
+### 5. Implementation Boundaries
+
+The resource manager uses explicitly documented synthetic resource-token mappings for selected qualitative V4 action requirements.
+
+These mappings are modelling assumptions and must not be interpreted as actual industrial measurements.
+
+The structured models provide a foundation for future dependency-aware scheduling, deadline-aware optimization, dynamic replanning and complete risk-objective optimization.
+
+These enhancements should not be considered implemented unless verified in the engine.
+
+---
 
