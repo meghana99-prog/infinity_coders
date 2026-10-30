@@ -16,6 +16,9 @@ from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from app.modules.m5_stochastic_simulation.resource_manager import (
+    validate_resource_plan,
+)
 
 from app.shared_data.complete_test_dataset_v4 import (
     get_universal_dataset,
@@ -114,7 +117,35 @@ def _resource_needs(action_name: str, model: dict) -> dict[str, int]:
     if action_name == "SHUTDOWN_REACTOR":
         needs["operators"] = 2
     return needs
+def validate_plan_resources(plan: tuple[str, ...], dataset: dict) -> dict:
+    """Validate cumulative synthetic resource consumption for an ordered plan."""
 
+    action_requirements = []
+
+    for action_name in plan:
+        model = dataset["action_models"].get(action_name)
+
+        if model is None:
+            return {
+                "status": "UNKNOWN",
+                "feasible": False,
+                "violations": [],
+                "unknowns": [f"Unknown action: {action_name}"],
+                "execution_authorized": False,
+            }
+
+        # Uses the existing documented synthetic-token mapping.
+        resources = _resource_needs(action_name, model)
+
+        action_requirements.append({
+            "action": action_name,
+            "resources": resources,
+        })
+
+    return validate_resource_plan(
+        dataset.get("resource_inventory", {}),
+        action_requirements,
+    )
 
 def _effect_parameters(model: dict) -> tuple[float, float, int, int]:
     effect = model.get("effects", {}).get("temperature_change", {})
@@ -327,9 +358,17 @@ def run_stage5(dataset: dict | None = None, scenario: str = "BASELINE_THERMAL_EV
             {"action": action, **validate_action(action, dataset, deepcopy(dataset["current_state"]))}
             for action in plan
         ]
-        report["feasible_in_all_runs"] = report["safety_or_resource_block_rate"] == 0
-        plan_reports.append(report)
+                # Validate cumulative synthetic resource consumption across the plan.
+        resource_report = validate_plan_resources(plan, dataset)
+        report["resource_validation"] = resource_report
+        report["resource_feasible"] = resource_report["feasible"]
 
+        report["feasible_in_all_runs"] = (
+            report["safety_or_resource_block_rate"] == 0
+            and report["resource_feasible"]
+        )
+
+        plan_reports.append(report)
     # Incident relevance is a separate gate from technical feasibility.
     # V4 scenario descriptions are explicit: some incidents require investigation
     # or mitigation capabilities that are NOT present in the Stage 5 action set.
